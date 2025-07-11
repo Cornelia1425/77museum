@@ -35,6 +35,10 @@ function createStarTexture() {
 }
 
 export default function ThreeScene() {
+  useEffect(() => {
+    console.log('ThreeScene mounted');
+    return () => console.log('ThreeScene unmounted');
+  }, []);
   const mountRef = useRef();
   const [tooltip, setTooltip] = useState({ show: false, text: '', x: 0, y: 0 });
   const { publicKey, connected, connecting, disconnect, signTransaction } = useWallet();
@@ -96,6 +100,96 @@ export default function ThreeScene() {
     }
   }, [connected, publicKey, signTransaction]);
 
+  // Gamification state
+  const [ownedModels, setOwnedModels] = useState({});
+  const [piloting, setPiloting] = useState(false); // change to store model name or false
+
+  // Debug: log piloting state changes
+  useEffect(() => {
+    console.log('[DEBUG] piloting state changed:', piloting);
+  }, [piloting]);
+  const [distanceTraveled, setDistanceTraveled] = useState(0);
+  const [lastPosition, setLastPosition] = useState(null);
+  const swordfishRef = useRef(null);
+  const tachikomaRef = useRef(null);
+
+  // After successful mint, mark model as owned
+  function handleMintSuccess(modelName) {
+    setOwnedModels((prev) => ({ ...prev, [modelName]: true }));
+  }
+
+  // Patch: call handleMintSuccess after minting Swordfish II
+  // (You can do the same for Tachikoma if you want)
+  // In your minting logic, after setMintStatus(...), add:
+  // if (modelName === 'Swordfish II') handleMintSuccess(modelName);
+
+  // Keyboard controls for piloting
+  useEffect(() => {
+    if (!piloting) return;
+    function handleKeyDown(e) {
+      let model = null;
+      if (piloting === 'Swordfish II') model = swordfishRef.current;
+      if (piloting === 'Tachikoma') model = tachikomaRef.current;
+      if (!model) return;
+      let move = { x: 0, z: 0 };
+      if (e.key === 'ArrowUp' || e.key === 'w') move.z = -1;
+      if (e.key === 'ArrowDown' || e.key === 's') move.z = 1;
+      if (e.key === 'ArrowLeft' || e.key === 'a') move.x = -1;
+      if (e.key === 'ArrowRight' || e.key === 'd') move.x = 1;
+      if (move.x !== 0 || move.z !== 0) {
+        const prev = model.position.clone();
+        model.position.x += move.x;
+        model.position.z += move.z;
+        setLastPosition(prev);
+        setDistanceTraveled((d) => d + Math.sqrt(move.x * move.x + move.z * move.z));
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [piloting]);
+
+  // Attach swordfishRef to Swordfish II model after loading
+  // In your GLTF loader:
+  // swordfishRef.current = model; // Assign ref to the model
+
+  // Attach tachikomaRef to Tachikoma model after loading
+  // In your STL loader for Tachikoma:
+  // tachikomaRef.current = mesh;
+
+  // Force ownership for Tachikoma for demo
+  useEffect(() => {
+    setOwnedModels((prev) => ({ ...prev, 'Tachikoma': true }));
+  }, []);
+
+  // Debug log for ownedModels and piloting
+  useEffect(() => {
+    console.log('ownedModels:', ownedModels);
+    console.log('piloting:', piloting);
+  }, [ownedModels, piloting]);
+
+  // UI: Pilot and Claim Reward buttons
+  // ... in your return/render section ...
+  // {ownedModels['Swordfish II'] && !piloting && (
+  //   <button onClick={() => setPiloting(true)}>Pilot Swordfish II</button>
+  // )}
+  // {piloting && (
+  //   <button onClick={() => setPiloting(false)}>Stop Piloting</button>
+  // )}
+  // {distanceTraveled >= 5 && (
+  //   <button onClick={handleClaimReward}>Claim Reward</button>
+  // )}
+
+  // Load ownership from localStorage on mount
+  useEffect(() => {
+    const stored = localStorage.getItem('ownedModels');
+    if (stored) setOwnedModels(JSON.parse(stored));
+  }, []);
+
+  // Save ownership to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('ownedModels', JSON.stringify(ownedModels));
+  }, [ownedModels]);
+
   useEffect(() => {
     try {
       const container = mountRef.current;
@@ -153,6 +247,7 @@ export default function ThreeScene() {
           camera.position.y += size / 5;
           camera.position.z += size / 2;
           camera.lookAt(center);
+          swordfishRef.current = model; // Assign ref to the model
         },
         undefined,
         (error) => {
@@ -244,6 +339,9 @@ export default function ThreeScene() {
             }
             
             // Camera centering is commented out
+            if (url.includes('tachikoma')) {
+              tachikomaRef.current = mesh;
+            }
           },
           undefined,
           (error) => {
@@ -393,6 +491,8 @@ export default function ThreeScene() {
             }).then(txid => {
               setMintStatus(`Successfully minted ${data.name}! TX: ${txid}`);
               console.log('Mint successful:', txid);
+              console.log('Minted:', data.name);
+              if (data.name === 'Swordfish II' || data.name === 'Tachikoma') handleMintSuccess(data.name); // Call handleMintSuccess
             }).catch(error => {
               console.error('Minting error:', error);
               setMintStatus(`Minting failed: ${error.message}`);
@@ -448,6 +548,17 @@ export default function ThreeScene() {
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
       
       {/* Wallet Connect Button */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+        .wallet-adapter-button-trigger {
+          background: #22232a !important;
+          color: #fff !important;
+          border-radius: 8px !important;
+          font-weight: 600 !important;
+          border: none !important;
+          font-family: 'Roboto', system-ui, Avenir, Helvetica, Arial, sans-serif !important;
+        }
+      `}</style>
       <div style={{
         position: 'fixed',
         top: '20px',
@@ -467,7 +578,7 @@ export default function ThreeScene() {
         padding: '8px 12px',
         borderRadius: '4px',
         fontSize: '12px',
-        fontFamily: 'Arial, sans-serif',
+        fontFamily: 'Roboto, system-ui, Avenir, Helvetica, Arial, sans-serif',
         zIndex: 1001
       }}>
         Supported: Phantom
@@ -484,20 +595,26 @@ export default function ThreeScene() {
           padding: '8px 12px',
           borderRadius: '4px',
           fontSize: '12px',
-          fontFamily: 'Arial, sans-serif',
+          fontFamily: 'Roboto, system-ui, Avenir, Helvetica, Arial, sans-serif',
           zIndex: 1001
         }}>
-          Connected: {publicKey?.toBase58().slice(0, 8)}...
+          <span style={{ fontFamily: 'Roboto, system-ui, Avenir, Helvetica, Arial, sans-serif' }}>
+            Connected: {publicKey?.toBase58().slice(0, 8)}...
+          </span>
           <button 
             onClick={disconnect}
             style={{
               marginLeft: '10px',
-              padding: '4px 8px',
-              backgroundColor: '#ff4444',
-              color: 'white',
-              border: 'none',
-              borderRadius: '2px',
-              cursor: 'pointer'
+              padding: '4px 12px',
+              backgroundColor: 'rgba(255,255,255,0.15)',
+              color: '#fff',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontWeight: 500,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+              transition: 'background 0.2s, color 0.2s',
+              fontFamily: 'Roboto, system-ui, Avenir, Helvetica, Arial, sans-serif',
             }}
           >
             Disconnect
@@ -516,7 +633,7 @@ export default function ThreeScene() {
           padding: '8px 12px',
           borderRadius: '4px',
           fontSize: '12px',
-          fontFamily: 'Arial, sans-serif',
+          fontFamily: 'Space Grotesk, system-ui, Avenir, Helvetica, Arial, sans-serif',
           zIndex: 1001
         }}>
           Connecting...
@@ -529,16 +646,20 @@ export default function ThreeScene() {
           position: 'fixed',
           bottom: '20px',
           left: '20px',
-          backgroundColor: minting ? 'rgba(255, 165, 0, 0.9)' : 'rgba(0, 128, 0, 0.9)',
-          color: 'white',
+          backgroundColor: minting
+            ? 'rgba(239,204,0,0.8)'
+            : 'rgba(70,97,60,0.85)', // green 85% transparent
+          color: minting ? '#22232a' : '#fff',
           padding: '16px 20px',
           borderRadius: '8px',
           fontSize: '13px',
-          fontFamily: 'monospace',
+          fontFamily: 'Space Grotesk, system-ui, Avenir, Helvetica, Arial, sans-serif',
           zIndex: 1001,
           maxWidth: '500px',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-          border: '1px solid rgba(255, 255, 255, 0.2)'
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.18)',
+          border: minting ? '0.5px solid #efcc00' : '0.5px solid #b6c0ee',
+          letterSpacing: '0.01em',
+          transition: 'background 0.2s, border 0.2s'
         }}>
           <div style={{ marginBottom: '8px', fontWeight: 'bold' }}>
             {minting ? '⏳ Minting...' : '✅ Mint Successful!'}
@@ -569,7 +690,8 @@ export default function ThreeScene() {
                 border: 'none',
                 borderRadius: '4px',
                 cursor: 'pointer',
-                fontSize: '12px'
+                fontSize: '12px',
+                fontFamily: 'Space Grotesk, system-ui, Avenir, Helvetica, Arial, sans-serif',
               }}
             >
               📋 Copy TX ID
@@ -589,7 +711,7 @@ export default function ThreeScene() {
             padding: '8px 12px',
             borderRadius: '4px',
             fontSize: '14px',
-            fontFamily: 'Arial, sans-serif',
+            fontFamily: 'Space Grotesk, system-ui, Avenir, Helvetica, Arial, sans-serif',
             pointerEvents: 'none',
             zIndex: 1000,
             whiteSpace: 'pre-line',
@@ -599,6 +721,91 @@ export default function ThreeScene() {
           {tooltip.text}
         </div>
       )}
+
+      {/* Minimal Elegant Pilot/Claim Button Block */}
+      <div style={{
+        position: 'fixed',
+        top: 80,
+        left: 20,
+        zIndex: 1002,
+        display: 'flex',
+        gap: '12px'
+      }}>
+        {ownedModels['Swordfish II'] && (
+          <button
+            onClick={() => { console.log('Clicked Pilot Swordfish II'); setPiloting('Swordfish II'); }}
+            disabled={piloting === 'Swordfish II'}
+            style={{
+              padding: '10px 22px',
+              fontWeight: 500,
+              background: piloting === 'Swordfish II' ? '#e5e7eb' : '#22232a',
+              color: piloting === 'Swordfish II' ? '#888' : '#fff',
+              border: '1px solid #333',
+              borderRadius: 8,
+              cursor: piloting === 'Swordfish II' ? 'not-allowed' : 'pointer',
+              boxShadow: piloting === 'Swordfish II' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)',
+              transition: 'background 0.2s, color 0.2s'
+            }}
+          >
+            {piloting === 'Swordfish II' ? 'Piloting Swordfish II' : 'Pilot Swordfish II'}
+          </button>
+        )}
+        {ownedModels['Tachikoma'] && (
+          <button
+            onClick={() => { console.log('Clicked Pilot Tachikoma'); setPiloting('Tachikoma'); }}
+            disabled={piloting === 'Tachikoma'}
+            style={{
+              padding: '10px 22px',
+              fontWeight: 500,
+              background: piloting === 'Tachikoma' ? '#e5e7eb' : '#22232a',
+              color: piloting === 'Tachikoma' ? '#888' : '#fff',
+              border: '1px solid #333',
+              borderRadius: 8,
+              cursor: piloting === 'Tachikoma' ? 'not-allowed' : 'pointer',
+              boxShadow: piloting === 'Tachikoma' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)',
+              transition: 'background 0.2s, color 0.2s'
+            }}
+          >
+            {piloting === 'Tachikoma' ? 'Piloting Tachikoma' : 'Pilot Tachikoma'}
+          </button>
+        )}
+        {piloting && (
+          <button
+            onClick={() => setPiloting(false)}
+            style={{
+              padding: '10px 22px',
+              fontWeight: 500,
+              background: '#fff',
+              color: '#22232a',
+              border: '1px solid #333',
+              borderRadius: 8,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              transition: 'background 0.2s, color 0.2s'
+            }}
+          >
+            Stop Piloting
+          </button>
+        )}
+        {distanceTraveled >= 5 && piloting && (
+          <button
+            onClick={() => alert('Reward claimed! (This is a local simulation)')}
+            style={{
+              padding: '10px 22px',
+              fontWeight: 500,
+              background: '#22232a',
+              color: '#fff',
+              border: '1px solid #333',
+              borderRadius: 8,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              transition: 'background 0.2s, color 0.2s'
+            }}
+          >
+            Claim Reward
+          </button>
+        )}
+      </div>
     </div>
   );
 }
